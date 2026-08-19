@@ -1,0 +1,57 @@
+{
+  "name": "rabbitevents/redis-transport",
+  "description": "Redis Streams transport for RabbitEvents",
+  "keywords": [
+    "laravel",
+    "redis",
+    "streams",
+    "events",
+    "rabbitevents",
+    "pubsub",
+    "event-driven"
+  ],
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Eugene Kirdzei",
+      "email": "masterjus@gmail.com"
+    }
+  ],
+  "require": {
+    "php": "^8.4",
+    "ext-json": "*",
+    "rabbitevents/foundation": "^9.1",
+    "illuminate/support": "^11.0|^12.0|^13.0",
+    "illuminate/container": "^11.0|^12.0|^13.0"
+  },
+  "require-dev": {
+    "mockery/mockery": "^1.6.0",
+    "phpstan/phpstan": "^2.1",
+    "phpunit/phpunit": "^11.0|^12.0"
+  },
+  "suggest": {
+    "ext-redis": "Required to connect to Redis natively via phpredis.",
+    "predis/predis": "Required if using Predis as the Redis client."
+  },
+  "autoload": {
+    "psr-4": {
+      "RabbitEvents\\Redis\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "RabbitEvents\\Redis\\Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "RabbitEvents\\Redis\\RedisTransportServiceProvider"
+      ]
+    }
+  },
+  "config": {
+    "sort-packages": true
+  }
+}

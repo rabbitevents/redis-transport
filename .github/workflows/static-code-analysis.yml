@@ -1,0 +1,32 @@
+name: Static code analysis
+
+on: [push, pull_request]
+
+jobs:
+  types:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-versions: ['8.4']
+    name: Static code analysis (PHP ${{ matrix.php-versions }})
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-versions }}
+          extensions: mbstring,bcmath,redis
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 5
+          max_attempts: 5
+          command: composer update --prefer-stable --prefer-dist --no-interaction --no-progress
+
+      - name: Execute type checking
+        run: vendor/bin/phpstan --configuration="phpstan.neon.dist"
