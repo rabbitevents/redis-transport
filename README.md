@@ -1,8 +1,11 @@
 # RabbitEvents Redis Streams Transport
 
 [![Unit tests](https://github.com/rabbitevents/redis-transport/actions/workflows/testing.yml/badge.svg)](https://github.com/rabbitevents/redis-transport/actions/workflows/testing.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/eugene-nuwber/REPLACE_WITH_YOUR_GIST_ID/raw/coverage.json)](https://gist.github.com/eugene-nuwber/REPLACE_WITH_YOUR_GIST_ID)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/eugene-nuwber/a86abd383c70df420b1fa23d130bc3b7/raw/coverage.json)](https://gist.github.com/eugene-nuwber/a86abd383c70df420b1fa23d130bc3b7)
 [![Static code analysis](https://github.com/rabbitevents/redis-transport/actions/workflows/static-code-analysis.yml/badge.svg)](https://github.com/rabbitevents/redis-transport/actions/workflows/static-code-analysis.yml)
+[![Total Downloads](https://img.shields.io/packagist/dt/rabbitevents/redis-transport)](https://packagist.org/packages/rabbitevents/redis-transport)
+[![Latest Version](https://img.shields.io/packagist/v/rabbitevents/redis-transport)](https://packagist.org/packages/rabbitevents/redis-transport)
+[![License](https://img.shields.io/packagist/l/rabbitevents/redis-transport)](https://packagist.org/packages/rabbitevents/redis-transport)  
 
 Redis Streams transport driver for [RabbitEvents](https://github.com/nuwber/rabbitevents).
 

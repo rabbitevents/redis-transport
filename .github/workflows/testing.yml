@@ -46,8 +46,8 @@ jobs:
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
-          gistID: REPLACE_WITH_YOUR_GIST_ID
-          filename: coverage.json
+          gistID: a86abd383c70df420b1fa23d130bc3b7
+          filename: redis-transport-coverage.json
           label: coverage
           message: ${{ steps.coverage.outputs.percentage }}%
           color: ${{ steps.coverage.outputs.percentage >= 80 && 'brightgreen' || steps.coverage.outputs.percentage >= 60 && 'yellow' || 'red' }}
