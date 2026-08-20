@@ -8,6 +8,7 @@ use Mockery as m;
 use RabbitEvents\Foundation\Contracts\Producer;
 use RabbitEvents\Redis\RedisClientInterface;
 use RabbitEvents\Redis\RedisProducerAdapter;
+use RabbitEvents\Redis\RedisQueue;
 use RabbitEvents\Redis\RedisTopic;
 use RabbitEvents\Redis\RedisTransportMessage;
 
@@ -34,5 +35,25 @@ class RedisProducerAdapterTest extends TestCase
             ->andReturn('1700000000-0');
 
         $producer->send($topic, $message);
+    }
+
+    public function test_send_resolves_stream_name_from_redis_queue(): void
+    {
+        /** @var RedisClientInterface&m\MockInterface $client */
+        $client = m::mock(RedisClientInterface::class);
+        $producer = new RedisProducerAdapter($client);
+
+        $topic = new RedisTopic('my-stream');
+        $queue = new RedisQueue('my-consumer-group', ['user.*'], $topic);
+
+        $message = new RedisTransportMessage('{"retry":true}', ['event' => 'user.created']);
+
+        // Must XADD to "my-stream" (the underlying stream), NOT "my-consumer-group"
+        $client->shouldReceive('xAdd')
+            ->once()
+            ->with('my-stream', '*', m::type('array'))
+            ->andReturn('1700000001-0');
+
+        $producer->send($queue, $message);
     }
 }

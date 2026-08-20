@@ -82,11 +82,25 @@ class RedisConsumerAdapter implements QueueConsumer
         }
     }
 
+    /**
+     * Reject the message.
+     *
+     * When $requeue is false, the message is acknowledged (removed from PEL).
+     * When $requeue is true, the message remains in the Pending Entries List (PEL)
+     * and is NOT acknowledged, allowing it to be reclaimed later via XCLAIM/XAUTOCLAIM.
+     *
+     * Note: The current receive() implementation reads only new messages (ID ">"),
+     * so requeued messages are not automatically re-delivered. They must be reclaimed
+     * by an external mechanism or a dedicated PEL recovery process.
+     * For retry within the worker, RabbitEvents uses the release() mechanism (via Sender/Releaser)
+     * which re-publishes the message to the stream.
+     */
     public function reject(TransportMessage $message, bool $requeue = false): void
     {
         if (!$requeue) {
             $this->acknowledge($message);
         }
+        // When requeue=true: intentionally leave the message in PEL (not ACK'd)
     }
 
     /**

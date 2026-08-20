@@ -16,7 +16,11 @@ class RedisProducerAdapter implements Producer
 
     public function send(Destination $destination, TransportMessage $message): void
     {
-        $stream = $destination->getOrigin();
+        // When releasing/retrying, Sender passes a RedisQueue as destination.
+        // We must write to the underlying stream, not the consumer group name.
+        $stream = $destination instanceof RedisQueue
+            ? $destination->getStreamName()
+            : (string) $destination->getOrigin();
 
         $properties = $message->getProperties();
 
@@ -26,6 +30,6 @@ class RedisProducerAdapter implements Producer
             'properties' => json_encode($properties, JSON_THROW_ON_ERROR),
         ];
 
-        $this->client->xAdd((string) $stream, '*', $fields);
+        $this->client->xAdd($stream, '*', $fields);
     }
 }
