@@ -49,6 +49,19 @@ return [
 ];
 ```
 
+### Configuration Options
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `driver` | `string` | `redis` | The connection driver. |
+| `host` | `string` | `127.0.0.1` | Redis server hostname or IP. |
+| `port` | `int` | `6379` | Redis server port. |
+| `password` | `string\|null` | `null` | Authentication password (if configured). |
+| `database` | `int` | `0` | Redis logical database index (0-15). Default is `0`. |
+| `timeout` | `float` | `3.0` | Connection timeout in seconds. |
+| `stream` | `string` | `events` | The Redis Stream key name used as the event topic. |
+| `consumer` | `string` | `hostname` | Unique consumer identifier within the consumer group. |
+
 ---
 
 ## Usage
