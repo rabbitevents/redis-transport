@@ -1,6 +1,7 @@
 # RabbitEvents Redis Streams Transport
 
 [![Unit tests](https://github.com/rabbitevents/redis-transport/actions/workflows/testing.yml/badge.svg)](https://github.com/rabbitevents/redis-transport/actions/workflows/testing.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/eugene-nuwber/REPLACE_WITH_YOUR_GIST_ID/raw/coverage.json)](https://gist.github.com/eugene-nuwber/REPLACE_WITH_YOUR_GIST_ID)
 [![Static code analysis](https://github.com/rabbitevents/redis-transport/actions/workflows/static-code-analysis.yml/badge.svg)](https://github.com/rabbitevents/redis-transport/actions/workflows/static-code-analysis.yml)
 
 Redis Streams transport driver for [RabbitEvents](https://github.com/nuwber/rabbitevents).
