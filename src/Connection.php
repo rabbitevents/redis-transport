@@ -110,6 +110,7 @@ class Connection implements ConnectionContract
             $redis->auth((string) $password);
         }
 
+        // Redis connects to database 0 by default; only issue SELECT for non-zero DBs to avoid network overhead
         if ($database > 0) {
             $redis->select($database);
         }

@@ -38,9 +38,14 @@ class PhpRedisClient implements RedisClientInterface
     public function xReadGroup(string $group, string $consumer, array $streams, ?int $count = 1, ?int $block = null): array|false
     {
         $countVal = $count ?? 1;
-        $blockVal = $block ?? 0;
 
-        $result = $this->redis->xReadGroup($group, $consumer, $streams, $countVal, $blockVal);
+        // When block is null, perform a non-blocking read (no BLOCK argument).
+        // BLOCK 0 in Redis means "block forever", so we must not pass it for non-blocking calls.
+        if ($block === null) {
+            $result = $this->redis->xReadGroup($group, $consumer, $streams, $countVal);
+        } else {
+            $result = $this->redis->xReadGroup($group, $consumer, $streams, $countVal, $block);
+        }
 
         return is_array($result) ? $result : false;
     }

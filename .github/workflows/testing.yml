@@ -10,7 +10,7 @@ jobs:
         php-versions: ['8.4']
     name: Testing on PHP ${{ matrix.php-versions }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -24,3 +24,30 @@ jobs:
 
       - name: Run PHPUnit
         run: vendor/bin/phpunit
+
+      - name: Generate coverage report
+        run: vendor/bin/phpunit --coverage-clover build/logs/clover.xml
+
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          COVERAGE=$(php -r "
+            \$xml = simplexml_load_file('build/logs/clover.xml');
+            \$metrics = \$xml->project->metrics;
+            \$elements = (float) \$metrics['elements'];
+            \$coveredelements = (float) \$metrics['coveredelements'];
+            echo round((\$coveredelements / \$elements) * 100, 2);
+          ")
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+
+      - name: Update coverage badge
+        if: github.ref == 'refs/heads/master'
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: a86abd383c70df420b1fa23d130bc3b7
+          filename: redis-transport-coverage.json
+          label: coverage
+          message: ${{ steps.coverage.outputs.percentage }}%
+          color: ${{ steps.coverage.outputs.percentage >= 80 && 'brightgreen' || steps.coverage.outputs.percentage >= 60 && 'yellow' || 'red' }}
