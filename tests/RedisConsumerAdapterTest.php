@@ -127,4 +127,33 @@ class RedisConsumerAdapterTest extends TestCase
 
         $consumer->reject($message, false);
     }
+
+    public function test_fail_message_routes_to_dead_letter_stream(): void
+    {
+        /** @var RedisClientInterface&m\MockInterface $client */
+        $client = m::mock(RedisClientInterface::class);
+        $topic = new RedisTopic('events');
+        $queue = new RedisQueue('service:users', ['user.*'], $topic);
+        $consumer = new RedisConsumerAdapter($client, $queue, 'worker-1');
+
+        $message = new RedisTransportMessage('body', ['event' => 'user.created'], '1700000000-0');
+
+        $client->shouldReceive('xAdd')
+            ->once()
+            ->with('events:failed', '*', m::on(function (array $fields) {
+                $properties = json_decode($fields['properties'], true);
+                return $fields['event'] === 'user.created'
+                    && $fields['body'] === 'body'
+                    && isset($properties['headers']['x-failed-at'])
+                    && $properties['headers']['x-exception-message'] === 'Something failed';
+            }))
+            ->andReturn('failed-1');
+
+        $client->shouldReceive('xAck')
+            ->once()
+            ->with('events', 'service:users', ['1700000000-0'])
+            ->andReturn(1);
+
+        $consumer->fail($message, new \RuntimeException('Something failed'));
+    }
 }

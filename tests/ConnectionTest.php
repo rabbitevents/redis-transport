@@ -82,4 +82,32 @@ class ConnectionTest extends TestCase
 
         self::assertInstanceOf(RedisConsumerAdapter::class, $consumer);
     }
+
+    public function test_deduplication_strategy(): void
+    {
+        $connection = new Connection();
+        self::assertNull($connection->getDeduplicationStrategy());
+
+        $strategy = new class implements \RabbitEvents\Foundation\Contracts\Deduplicator { public function isDuplicate(\RabbitEvents\Foundation\Contracts\TransportMessage $m): bool { return false; } public function markHandled(\RabbitEvents\Foundation\Contracts\TransportMessage $m): void {} };
+        $connection->setDeduplicationStrategy($strategy);
+
+        self::assertSame($strategy, $connection->getDeduplicationStrategy());
+    }
+
+    public function test_make_queue_uses_default_topic_when_not_provided(): void
+    {
+        /** @var RedisClientInterface&m\MockInterface $client */
+        $client = m::mock(RedisClientInterface::class);
+        $connection = new Connection(['stream' => 'custom_stream'], $client);
+
+        $client->shouldReceive('xGroup')
+            ->once()
+            ->with('CREATE', 'custom_stream', 'my-queue', '$', true)
+            ->andReturn(true);
+
+        $queue = $connection->makeQueue('my-queue', ['user.created']);
+
+        self::assertInstanceOf(RedisQueue::class, $queue);
+        self::assertEquals('custom_stream', $queue->getStreamName());
+    }
 }

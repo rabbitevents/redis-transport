@@ -74,6 +74,11 @@ class RedisTransportMessage implements TransportMessage
         return is_string($event) ? $event : null;
     }
 
+    public function setRoutingKey(string $key): void
+    {
+        $this->setProperty('event', $key);
+    }
+
     public function getTimestamp(): ?int
     {
         $ts = $this->getProperty('timestamp');
@@ -84,5 +89,49 @@ class RedisTransportMessage implements TransportMessage
     public function setTimestamp(int $timestamp): void
     {
         $this->setProperty('timestamp', $timestamp);
+    }
+
+    public function getMessageId(): ?string
+    {
+        $messageId = $this->getProperty('message_id');
+
+        return is_string($messageId) && $messageId !== '' ? $messageId : $this->id;
+    }
+
+    public function setMessageId(?string $messageId): void
+    {
+        $this->setProperty('message_id', $messageId);
+    }
+
+    public function getHeader(string $name, mixed $default = null): mixed
+    {
+        $headers = $this->getHeaders();
+
+        return $headers[$name] ?? $default;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getHeaders(): array
+    {
+        $headers = $this->getProperty('headers', []);
+
+        return is_array($headers) ? $headers : [];
+    }
+
+    public function setHeader(string $name, mixed $value): void
+    {
+        $headers = $this->getHeaders();
+        $headers[$name] = $value;
+        $this->setProperty('headers', $headers);
+    }
+
+    /**
+     * @param array<string, mixed> $headers
+     */
+    public function setHeaders(array $headers): void
+    {
+        $this->setProperty('headers', $headers);
     }
 }

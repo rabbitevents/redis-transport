@@ -34,4 +34,27 @@ class RedisTransportMessageTest extends TestCase
         $message->setId('new-id-1');
         self::assertEquals('new-id-1', $message->getId());
     }
+
+    public function test_message_id_and_headers(): void
+    {
+        $message = new RedisTransportMessage('payload', [
+            'message_id' => 'uuid-123',
+            'headers' => [
+                '_laravel_context' => ['trace_id' => 'abc'],
+            ],
+        ], 'stream-msg-1');
+
+        self::assertEquals('uuid-123', $message->getMessageId());
+        self::assertEquals(['trace_id' => 'abc'], $message->getHeader('_laravel_context'));
+        self::assertEquals(['_laravel_context' => ['trace_id' => 'abc']], $message->getHeaders());
+
+        $message->setMessageId('uuid-456');
+        self::assertEquals('uuid-456', $message->getMessageId());
+
+        $message->setHeader('custom_header', 'custom_val');
+        self::assertEquals('custom_val', $message->getHeader('custom_header'));
+
+        $message->setRoutingKey('order.updated');
+        self::assertEquals('order.updated', $message->getRoutingKey());
+    }
 }

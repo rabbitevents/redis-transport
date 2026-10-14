@@ -95,6 +95,12 @@ php artisan rabbitevents:listen user.registered,order.* --connection=redis
 
 ---
 
+## Reliability, DLQ & Deduplication
+
+* **Dead Letter Stream (`HandlesFailedMessages`)**: When messages fail or exceed attempts, they are routed to a dedicated dead-letter stream (`{stream}:failed`) with failure metadata (`x-failed-at`, `x-exception-message`, `x-exception-class`, `x-original-routing-key`) and acknowledged from the main stream.
+* **Message ID & Context Propagation**: Full support for RFC 4122 v4 UUID message IDs and Laravel 11+ `Context` propagation via message headers.
+* **Deduplication Strategy**: Supports pluggable deduplication strategies (e.g. `InMemoryDeduplicator`) configured via `rabbitevents.deduplication_strategy`.
+
 ## Architecture & Guarantees
 
 * **Topic**: Mapped to a Redis Stream key (`events`).

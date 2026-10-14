@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace RabbitEvents\Redis;
 
+use RabbitEvents\Foundation\Contracts\HandlesFailedMessages;
 use RabbitEvents\Foundation\Contracts\QueueConsumer;
 use RabbitEvents\Foundation\Contracts\TransportMessage;
+use Throwable;
 
-class RedisConsumerAdapter implements QueueConsumer
+class RedisConsumerAdapter implements QueueConsumer, HandlesFailedMessages
 {
     public function __construct(
         private readonly RedisClientInterface $client,
@@ -44,7 +46,7 @@ class RedisConsumerAdapter implements QueueConsumer
                     if (is_array($decoded)) {
                         $properties = $decoded;
                     }
-                } catch (\Throwable) {
+                } catch (Throwable) {
                     $properties = [];
                 }
             }
@@ -88,12 +90,6 @@ class RedisConsumerAdapter implements QueueConsumer
      * When $requeue is false, the message is acknowledged (removed from PEL).
      * When $requeue is true, the message remains in the Pending Entries List (PEL)
      * and is NOT acknowledged, allowing it to be reclaimed later via XCLAIM/XAUTOCLAIM.
-     *
-     * Note: The current receive() implementation reads only new messages (ID ">"),
-     * so requeued messages are not automatically re-delivered. They must be reclaimed
-     * by an external mechanism or a dedicated PEL recovery process.
-     * For retry within the worker, RabbitEvents uses the release() mechanism (via Sender/Releaser)
-     * which re-publishes the message to the stream.
      */
     public function reject(TransportMessage $message, bool $requeue = false): void
     {
@@ -101,6 +97,29 @@ class RedisConsumerAdapter implements QueueConsumer
             $this->acknowledge($message);
         }
         // When requeue=true: intentionally leave the message in PEL (not ACK'd)
+    }
+
+    public function fail(TransportMessage $message, Throwable $exception): void
+    {
+        $stream = $this->queue->getStreamName();
+        $failedStream = "{$stream}:failed";
+
+        $properties = $message->getProperties();
+        $headers = is_array($properties['headers'] ?? null) ? $properties['headers'] : [];
+        $headers['x-failed-at'] = (string) microtime(true);
+        $headers['x-original-routing-key'] = (string) ($message->getRoutingKey() ?? ($properties['event'] ?? ''));
+        $headers['x-exception-message'] = $exception->getMessage();
+        $headers['x-exception-class'] = get_class($exception);
+        $properties['headers'] = $headers;
+
+        $fields = [
+            'body' => $message->getBody(),
+            'event' => (string) ($message->getRoutingKey() ?? $properties['event'] ?? ''),
+            'properties' => json_encode($properties, JSON_THROW_ON_ERROR),
+        ];
+
+        $this->client->xAdd($failedStream, '*', $fields);
+        $this->acknowledge($message);
     }
 
     /**
@@ -122,7 +141,7 @@ class RedisConsumerAdapter implements QueueConsumer
             }
 
             $escaped = preg_quote($pattern, '/');
-            $regex = str_replace(['\#', '\*'], ['.*', '[^.]+'], $escaped);
+            $regex = str_replace(['\\#', '\\*'], ['.*', '[^.]+'], $escaped);
 
             if (preg_match('/^' . $regex . '$/', $event)) {
                 return true;
