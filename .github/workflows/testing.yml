@@ -2,6 +2,11 @@ name: Unit tests
 
 on: [push, pull_request]
 
+env:
+  # rabbitevents/foundation and rabbitevents/listener ^10.0 are not on Packagist yet:
+  # take them from this branch of rabbitevents/rabbitevents. Drop these steps once 10.0 is released.
+  RABBITEVENTS_REF: '10.x'
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -9,18 +14,40 @@ jobs:
       matrix:
         php-versions: ['8.4']
     name: Testing on PHP ${{ matrix.php-versions }}
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    env:
+      REDIS_HOST: 127.0.0.1
     steps:
       - uses: actions/checkout@v6
+
+      - name: Checkout RabbitEvents ${{ env.RABBITEVENTS_REF }}
+        uses: actions/checkout@v6
+        with:
+          repository: rabbitevents/rabbitevents
+          ref: ${{ env.RABBITEVENTS_REF }}
+          path: .rabbitevents
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-versions }}
-          extensions: mbstring,bcmath,redis
+          extensions: mbstring,bcmath,redis,sockets
           coverage: pcov
           tools: phpunit,composer
 
+      - name: Use RabbitEvents ${{ env.RABBITEVENTS_REF }}
+        run: |
+          composer config repositories.rabbitevents-foundation '{"type": "path", "url": ".rabbitevents/src/RabbitEvents/Foundation", "options": {"versions": {"rabbitevents/foundation": "10.0.x-dev"}}}'
+          composer config repositories.rabbitevents-listener '{"type": "path", "url": ".rabbitevents/src/RabbitEvents/Listener", "options": {"versions": {"rabbitevents/listener": "10.0.x-dev"}}}'
+          composer config minimum-stability dev
+          composer config prefer-stable true
+
       - name: Install dependencies
-        run: composer install -o -q
+        run: composer update -o -q --prefer-dist --no-interaction
 
       - name: Run PHPUnit
         run: vendor/bin/phpunit
