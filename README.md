@@ -17,7 +17,7 @@ This package enables RabbitEvents to publish events to and consume events from *
 
 * PHP >= 8.4
 * `ext-redis` (recommended) or compatible client
-* `rabbitevents/foundation` >= 9.1
+* `rabbitevents/foundation` ^10.0
 
 ---
 
@@ -95,18 +95,21 @@ php artisan rabbitevents:listen user.registered,order.* --connection=redis
 
 ---
 
-## Reliability, DLQ & Deduplication
-
-* **Dead Letter Stream (`HandlesFailedMessages`)**: When messages fail or exceed attempts, they are routed to a dedicated dead-letter stream (`{stream}:failed`) with failure metadata (`x-failed-at`, `x-exception-message`, `x-exception-class`, `x-original-routing-key`) and acknowledged from the main stream.
-* **Message ID & Context Propagation**: Full support for RFC 4122 v4 UUID message IDs and Laravel 11+ `Context` propagation via message headers.
-* **Deduplication Strategy**: Supports pluggable deduplication strategies (e.g. `InMemoryDeduplicator`) configured via `rabbitevents.deduplication_strategy`.
-
 ## Architecture & Guarantees
 
-* **Topic**: Mapped to a Redis Stream key (`events`).
-* **Queue**: Mapped to a Redis Stream **Consumer Group** (`XGROUP`).
-* **Reliability**: Uses `XADD` for publishing, `XREADGROUP` for receiving, and `XACK` on successful message processing.
-* **Wildcards**: Supports AMQP-style routing key wildcards (`user.*`, `order.#`).
+* **Topic**: a Redis Stream (`events` by default, config key `stream`) that publishers append every event to.
+* **Queue**: a **consumer group** (`XGROUP`) on the topic stream, plus the queue's own **direct stream** `rabbitevents:queue:{queue}` with a group of the same name. A worker reads both with one `XREADGROUP`.
+* **Messages for one queue** (retries released by a listener, messages put back with `requeue`, `rabbitevents:retry`) are appended to that queue's direct stream, so other consumer groups on the topic don't receive them.
+* **Requeue**: a stream entry can't be returned, so `reject($message, requeue: true)` and `requeue($messages)` append a copy to the direct stream and acknowledge the original. Order is kept.
+* **Acknowledgement**: `XACK` in the stream the entry was read from.
+* **Wildcards**: AMQP-style patterns (`user.*`, `order.#`); entries of other events are acknowledged and skipped.
+
+## Reliability & Failed Messages
+
+* **Failed messages**: RabbitEvents 10.x moves a message that failed all its tries to `{queue}.failed`. With this transport it is a queue fed only through its direct stream (`rabbitevents:queue:{queue}.failed`); `rabbitevents:failed`, `retry`, `forget` and `flush` work as with RabbitMQ.
+* **No delayed retries**: Redis Streams can't delay a delivery, so a released message is retried right away regardless of `--sleep`.
+* **Message ID & Context Propagation**: RFC 4122 v4 UUID message IDs and Laravel `Context` propagation work as with RabbitMQ.
+* **Deduplication**: transport-independent; see the optional [`rabbitevents/deduplication`](https://github.com/rabbitevents/deduplication) package.
 
 ---
 
