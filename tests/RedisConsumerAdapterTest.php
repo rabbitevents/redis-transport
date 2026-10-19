@@ -26,7 +26,7 @@ class RedisConsumerAdapterTest extends TestCase
 
         $client->shouldReceive('xReadGroup')
             ->once()
-            ->with('service:users', 'worker-1', ['events' => '>'], 1, 1000)
+            ->with('service:users', 'worker-1', ['events' => '>', 'rabbitevents:queue:service:users' => '>'], 1, 1000)
             ->andReturn([
                 'events' => [
                     '1700000000-0' => [
@@ -55,7 +55,7 @@ class RedisConsumerAdapterTest extends TestCase
 
         $client->shouldReceive('xReadGroup')
             ->once()
-            ->with('service:users', 'worker-1', ['events' => '>'], 1, null)
+            ->with('service:users', 'worker-1', ['events' => '>', 'rabbitevents:queue:service:users' => '>'], 1, null)
             ->andReturn(false);
 
         $message = $consumer->receive(0);
@@ -100,8 +100,9 @@ class RedisConsumerAdapterTest extends TestCase
         $queue = new RedisQueue('service:users', ['user.*'], $topic);
         $consumer = new RedisConsumerAdapter($client, $queue, 'worker-1');
 
-        $message = new RedisTransportMessage('body', [], '1700000000-0');
+        $message = new RedisTransportMessage('body', [], '1700000000-0', 'events');
 
+        // Acknowledged in the stream it was read from.
         $client->shouldReceive('xAck')
             ->once()
             ->with('events', 'service:users', ['1700000000-0'])
@@ -118,7 +119,7 @@ class RedisConsumerAdapterTest extends TestCase
         $queue = new RedisQueue('service:users', ['user.*'], $topic);
         $consumer = new RedisConsumerAdapter($client, $queue, 'worker-1');
 
-        $message = new RedisTransportMessage('body', [], '1700000000-0');
+        $message = new RedisTransportMessage('body', [], '1700000000-0', 'events');
 
         $client->shouldReceive('xAck')
             ->once()
@@ -128,32 +129,50 @@ class RedisConsumerAdapterTest extends TestCase
         $consumer->reject($message, false);
     }
 
-    public function test_fail_message_routes_to_dead_letter_stream(): void
+    public function test_one_read_returning_entries_from_both_streams_loses_none(): void
     {
         /** @var RedisClientInterface&m\MockInterface $client */
         $client = m::mock(RedisClientInterface::class);
-        $topic = new RedisTopic('events');
-        $queue = new RedisQueue('service:users', ['user.*'], $topic);
+        $queue = new RedisQueue('service:users', ['user.*'], new RedisTopic('events'));
         $consumer = new RedisConsumerAdapter($client, $queue, 'worker-1');
 
-        $message = new RedisTransportMessage('body', ['event' => 'user.created'], '1700000000-0');
+        $client->shouldReceive('xReadGroup')->once()->andReturn([
+            'events' => ['1-0' => ['body' => 'a', 'event' => 'user.created']],
+            'rabbitevents:queue:service:users' => ['2-0' => ['body' => 'b', 'event' => 'user.updated']],
+        ]);
 
-        $client->shouldReceive('xAdd')
-            ->once()
-            ->with('events:failed', '*', m::on(function (array $fields) {
-                $properties = json_decode($fields['properties'], true);
-                return $fields['event'] === 'user.created'
-                    && $fields['body'] === 'body'
-                    && isset($properties['headers']['x-failed-at'])
-                    && $properties['headers']['x-exception-message'] === 'Something failed';
-            }))
-            ->andReturn('failed-1');
+        $first = $consumer->receive(0);
+        $second = $consumer->receive(0);
+        self::assertSame(['a', 'b'], [$first?->getBody(), $second?->getBody()]);
+    }
 
-        $client->shouldReceive('xAck')
-            ->once()
-            ->with('events', 'service:users', ['1700000000-0'])
-            ->andReturn(1);
+    public function test_requeue_moves_messages_in_order_to_the_queue_direct_stream(): void
+    {
+        /** @var RedisClientInterface&m\MockInterface $client */
+        $client = m::mock(RedisClientInterface::class);
+        $queue = new RedisQueue('service:users', ['user.*'], new RedisTopic('events'));
+        $consumer = new RedisConsumerAdapter($client, $queue, 'worker-1');
+        $calls = [];
 
-        $consumer->fail($message, new \RuntimeException('Something failed'));
+        $client->shouldReceive('xAdd')->twice()->andReturnUsing(function ($stream, $id, $fields) use (&$calls) {
+            $calls[] = ['xAdd', $stream, $fields['body']];
+            return '9-0';
+        });
+        $client->shouldReceive('xAck')->twice()->andReturnUsing(function ($stream, $group, $ids) use (&$calls) {
+            $calls[] = ['xAck', $stream, $ids[0]];
+            return 1;
+        });
+
+        $consumer->requeue([
+            new RedisTransportMessage('a', ['event' => 'user.created'], '1-0', 'events'),
+            new RedisTransportMessage('b', ['event' => 'user.updated'], '2-0', 'events'),
+        ]);
+
+        self::assertSame([
+            ['xAdd', 'rabbitevents:queue:service:users', 'a'],
+            ['xAck', 'events', '1-0'],
+            ['xAdd', 'rabbitevents:queue:service:users', 'b'],
+            ['xAck', 'events', '2-0'],
+        ], $calls);
     }
 }

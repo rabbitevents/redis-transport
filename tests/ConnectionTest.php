@@ -57,10 +57,9 @@ class ConnectionTest extends TestCase
 
         $topic = new RedisTopic('events');
 
-        $client->shouldReceive('xGroup')
-            ->once()
-            ->with('CREATE', 'events', 'my-queue', '$', true)
-            ->andReturn(true);
+        // New events from the shared stream, everything from the queue's own direct stream.
+        $client->shouldReceive('xGroup')->once()->with('CREATE', 'events', 'my-queue', '$', true)->andReturn(true);
+        $client->shouldReceive('xGroup')->once()->with('CREATE', 'rabbitevents:queue:my-queue', 'my-queue', '0', true)->andReturn(true);
 
         $queue = $connection->makeQueue('my-queue', ['user.created'], $topic);
 
@@ -83,15 +82,23 @@ class ConnectionTest extends TestCase
         self::assertInstanceOf(RedisConsumerAdapter::class, $consumer);
     }
 
-    public function test_deduplication_strategy(): void
+    public function test_make_failed_queue_uses_dedicated_stream(): void
     {
-        $connection = new Connection();
-        self::assertNull($connection->getDeduplicationStrategy());
+        /** @var RedisClientInterface&m\MockInterface $client */
+        $client = m::mock(RedisClientInterface::class);
+        $connection = new Connection(['stream' => 'events'], $client);
 
-        $strategy = new class implements \RabbitEvents\Foundation\Contracts\Deduplicator { public function isDuplicate(\RabbitEvents\Foundation\Contracts\TransportMessage $m): bool { return false; } public function markHandled(\RabbitEvents\Foundation\Contracts\TransportMessage $m): void {} };
-        $connection->setDeduplicationStrategy($strategy);
+        $client->shouldReceive('xGroup')
+            ->once()
+            ->with('CREATE', 'rabbitevents:queue:service:users.failed', 'service:users.failed', '0', true);
 
-        self::assertSame($strategy, $connection->getDeduplicationStrategy());
+        $queue = $connection->makeFailedQueue('service:users');
+
+        self::assertInstanceOf(\RabbitEvents\Redis\RedisFailedQueue::class, $queue);
+        self::assertSame('service:users', $queue->getOriginalQueueName());
+        self::assertSame('service:users.failed', $queue->getName());
+        // Not bound to the shared stream: it is fed only with messages addressed to it.
+        self::assertSame(['rabbitevents:queue:service:users.failed'], $queue->getStreamNames());
     }
 
     public function test_make_queue_uses_default_topic_when_not_provided(): void
@@ -100,14 +107,12 @@ class ConnectionTest extends TestCase
         $client = m::mock(RedisClientInterface::class);
         $connection = new Connection(['stream' => 'custom_stream'], $client);
 
-        $client->shouldReceive('xGroup')
-            ->once()
-            ->with('CREATE', 'custom_stream', 'my-queue', '$', true)
-            ->andReturn(true);
+        $client->shouldReceive('xGroup')->once()->with('CREATE', 'custom_stream', 'my-queue', '$', true)->andReturn(true);
+        $client->shouldReceive('xGroup')->once()->with('CREATE', 'rabbitevents:queue:my-queue', 'my-queue', '0', true)->andReturn(true);
 
         $queue = $connection->makeQueue('my-queue', ['user.created']);
 
         self::assertInstanceOf(RedisQueue::class, $queue);
-        self::assertEquals('custom_stream', $queue->getStreamName());
+        self::assertEquals('custom_stream', $queue->getTopic()?->getName());
     }
 }

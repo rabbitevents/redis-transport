@@ -6,8 +6,8 @@ namespace RabbitEvents\Redis;
 
 use Illuminate\Support\Arr;
 use RabbitEvents\Foundation\Contracts\Connection as ConnectionContract;
-use RabbitEvents\Foundation\Contracts\Deduplicator;
 use RabbitEvents\Foundation\Contracts\Destination;
+use RabbitEvents\Foundation\Contracts\FailedDestination;
 use RabbitEvents\Foundation\Contracts\Producer;
 use RabbitEvents\Foundation\Contracts\QueueConsumer;
 use Redis;
@@ -17,7 +17,6 @@ use Throwable;
 class Connection implements ConnectionContract
 {
     private ?RedisClientInterface $client = null;
-    private ?Deduplicator $deduplicationStrategy = null;
 
     /**
      * @param array<string, mixed> $config
@@ -71,37 +70,35 @@ class Connection implements ConnectionContract
     public function makeQueue(string $queueName, array $events, ?Destination $topic = null): Destination
     {
         $topic = $topic ?: $this->makeTopic();
-        $topicDestination = $topic instanceof RedisTopic ? $topic : new RedisTopic((string) $topic->getOrigin());
+        $topic = $topic instanceof RedisTopic ? $topic : new RedisTopic((string) $topic->getOrigin());
+        $queue = new RedisQueue($queueName, $events, $topic);
 
-        // Create consumer group on stream (MKSTREAM creates stream if it doesn't exist)
+        // Only events published from now on; the direct stream holds only messages for this queue.
+        $this->createGroup($topic->getName(), $queueName, '$');
+        $this->createGroup($queue->getDirectStreamName(), $queueName, '0');
+
+        return $queue;
+    }
+
+    public function makeFailedQueue(string $queueName): FailedDestination
+    {
+        $queue = new RedisFailedQueue($queueName);
+
+        $this->createGroup($queue->getDirectStreamName(), $queue->getName(), '0');
+
+        return $queue;
+    }
+
+    private function createGroup(string $stream, string $group, string $startId): void
+    {
         try {
-            $this->getClient()->xGroup(
-                'CREATE',
-                $topicDestination->getName(),
-                $queueName,
-                '$',
-                true
-            );
+            // MKSTREAM creates the stream if it doesn't exist yet.
+            $this->getClient()->xGroup('CREATE', $stream, $group, $startId, true);
         } catch (Throwable $e) {
-            // Group may already exist (BUSYGROUP in Redis)
             if (!str_contains($e->getMessage(), 'BUSYGROUP')) {
                 throw $e;
             }
         }
-
-        return new RedisQueue($queueName, $events, $topicDestination);
-    }
-
-    public function getDeduplicationStrategy(): ?Deduplicator
-    {
-        return $this->deduplicationStrategy;
-    }
-
-    public function setDeduplicationStrategy(?Deduplicator $strategy): self
-    {
-        $this->deduplicationStrategy = $strategy;
-
-        return $this;
     }
 
     public function getConfig(?string $key = null, mixed $default = null): mixed

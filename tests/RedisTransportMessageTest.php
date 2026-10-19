@@ -35,24 +35,21 @@ class RedisTransportMessageTest extends TestCase
         self::assertEquals('new-id-1', $message->getId());
     }
 
-    public function test_message_id_and_headers(): void
+    public function test_message_id_and_properties(): void
     {
         $message = new RedisTransportMessage('payload', [
             'message_id' => 'uuid-123',
-            'headers' => [
-                '_laravel_context' => ['trace_id' => 'abc'],
-            ],
+            'trace_context' => ['trace_id' => 'abc'],
         ], 'stream-msg-1');
 
         self::assertEquals('uuid-123', $message->getMessageId());
-        self::assertEquals(['trace_id' => 'abc'], $message->getHeader('_laravel_context'));
-        self::assertEquals(['_laravel_context' => ['trace_id' => 'abc']], $message->getHeaders());
+        self::assertEquals(['trace_id' => 'abc'], $message->getProperty('trace_context'));
 
         $message->setMessageId('uuid-456');
         self::assertEquals('uuid-456', $message->getMessageId());
 
-        $message->setHeader('custom_header', 'custom_val');
-        self::assertEquals('custom_val', $message->getHeader('custom_header'));
+        $message->setProperty('custom_property', 'custom_val');
+        self::assertEquals('custom_val', $message->getProperty('custom_property'));
 
         $message->setRoutingKey('order.updated');
         self::assertEquals('order.updated', $message->getRoutingKey());

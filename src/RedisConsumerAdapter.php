@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace RabbitEvents\Redis;
 
-use RabbitEvents\Foundation\Contracts\HandlesFailedMessages;
 use RabbitEvents\Foundation\Contracts\QueueConsumer;
 use RabbitEvents\Foundation\Contracts\TransportMessage;
 use Throwable;
 
-class RedisConsumerAdapter implements QueueConsumer, HandlesFailedMessages
+class RedisConsumerAdapter implements QueueConsumer
 {
     public function __construct(
         private readonly RedisClientInterface $client,
@@ -18,108 +17,102 @@ class RedisConsumerAdapter implements QueueConsumer, HandlesFailedMessages
     ) {
     }
 
+    /**
+     * Entries already read from Redis but not returned yet: one read may return an entry per stream.
+     *
+     * @var list<RedisTransportMessage>
+     */
+    private array $buffer = [];
+
     public function receive(int $timeout = 0): ?TransportMessage
     {
-        $stream = $this->queue->getStreamName();
-        $group = $this->queue->getName();
-
-        // Timeout in milliseconds (0 means non-blocking)
-        $block = $timeout > 0 ? $timeout : null;
-
-        $response = $this->client->xReadGroup(
-            $group,
-            $this->consumerName,
-            [$stream => '>'],
-            1,
-            $block
-        );
-
-        if (!$response || !isset($response[$stream])) {
-            return null;
+        if (!$this->buffer) {
+            $this->buffer = $this->read($timeout);
         }
 
-        foreach ($response[$stream] as $id => $fields) {
-            $properties = [];
-            if (isset($fields['properties'])) {
-                try {
-                    $decoded = json_decode($fields['properties'], true, 512, JSON_THROW_ON_ERROR);
-                    if (is_array($decoded)) {
-                        $properties = $decoded;
-                    }
-                } catch (Throwable) {
-                    $properties = [];
-                }
-            }
-
-            $event = $fields['event'] ?? $properties['event'] ?? '';
-            $properties['event'] = $event;
-
-            // Check if this event matches the queue's subscribed events
-            if (!$this->eventMatches($event, $this->queue->getEvents())) {
-                // Acknowledge and skip message not destined for this handler
-                $this->client->xAck($stream, $group, [(string) $id]);
-                continue;
-            }
-
-            return new RedisTransportMessage(
-                (string) ($fields['body'] ?? ''),
-                $properties,
-                (string) $id
-            );
-        }
-
-        return null;
+        return array_shift($this->buffer);
     }
 
     public function acknowledge(TransportMessage $message): void
     {
-        $id = $message->getOrigin();
-
-        if ($id !== null) {
+        if ($message instanceof RedisTransportMessage && $message->getId() !== null) {
             $this->client->xAck(
-                $this->queue->getStreamName(),
+                $message->getStream() ?? $this->queue->getDirectStreamName(),
                 $this->queue->getName(),
-                [(string) $id]
+                [$message->getId()]
             );
         }
     }
 
-    /**
-     * Reject the message.
-     *
-     * When $requeue is false, the message is acknowledged (removed from PEL).
-     * When $requeue is true, the message remains in the Pending Entries List (PEL)
-     * and is NOT acknowledged, allowing it to be reclaimed later via XCLAIM/XAUTOCLAIM.
-     */
     public function reject(TransportMessage $message, bool $requeue = false): void
     {
-        if (!$requeue) {
-            $this->acknowledge($message);
-        }
-        // When requeue=true: intentionally leave the message in PEL (not ACK'd)
+        $requeue ? $this->requeue([$message]) : $this->acknowledge($message);
     }
 
-    public function fail(TransportMessage $message, Throwable $exception): void
+    /**
+     * A stream entry can't be put back, so a copy is appended to the queue's direct stream
+     * (visible to this queue only) and the original is acknowledged. The order is kept.
+     *
+     * @param list<TransportMessage> $messages
+     */
+    public function requeue(array $messages): void
     {
-        $stream = $this->queue->getStreamName();
-        $failedStream = "{$stream}:failed";
+        $producer = new RedisProducerAdapter($this->client);
 
-        $properties = $message->getProperties();
-        $headers = is_array($properties['headers'] ?? null) ? $properties['headers'] : [];
-        $headers['x-failed-at'] = (string) microtime(true);
-        $headers['x-original-routing-key'] = (string) ($message->getRoutingKey() ?? ($properties['event'] ?? ''));
-        $headers['x-exception-message'] = $exception->getMessage();
-        $headers['x-exception-class'] = get_class($exception);
-        $properties['headers'] = $headers;
+        foreach ($messages as $message) {
+            $producer->send($this->queue, $message);
+            $this->acknowledge($message);
+        }
+    }
 
-        $fields = [
-            'body' => $message->getBody(),
-            'event' => (string) ($message->getRoutingKey() ?? $properties['event'] ?? ''),
-            'properties' => json_encode($properties, JSON_THROW_ON_ERROR),
-        ];
+    /**
+     * @return list<RedisTransportMessage>
+     */
+    private function read(int $timeout): array
+    {
+        $response = $this->client->xReadGroup(
+            $this->queue->getName(),
+            $this->consumerName,
+            array_fill_keys($this->queue->getStreamNames(), '>'),
+            1,
+            $timeout > 0 ? $timeout : null // milliseconds, null means non-blocking
+        );
 
-        $this->client->xAdd($failedStream, '*', $fields);
-        $this->acknowledge($message);
+        $messages = [];
+
+        foreach ($response ?: [] as $stream => $entries) {
+            foreach ($entries as $id => $fields) {
+                $message = $this->toMessage((string) $stream, (string) $id, $fields);
+
+                // The shared stream carries every event; skip the ones this queue doesn't listen to.
+                if (!$this->eventMatches((string) $message->getRoutingKey(), $this->queue->getEvents())) {
+                    $this->acknowledge($message);
+                    continue;
+                }
+
+                $messages[] = $message;
+            }
+        }
+
+        return $messages;
+    }
+
+    /**
+     * @param array<string, string> $fields
+     */
+    private function toMessage(string $stream, string $id, array $fields): RedisTransportMessage
+    {
+        $properties = [];
+
+        try {
+            $decoded = json_decode($fields['properties'] ?? '[]', true, 512, JSON_THROW_ON_ERROR);
+            $properties = is_array($decoded) ? $decoded : [];
+        } catch (Throwable) {
+        }
+
+        $properties['event'] = $fields['event'] ?? $properties['event'] ?? '';
+
+        return new RedisTransportMessage((string) ($fields['body'] ?? ''), $properties, $id, $stream);
     }
 
     /**

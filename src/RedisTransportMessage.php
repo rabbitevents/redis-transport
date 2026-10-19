@@ -11,13 +11,20 @@ class RedisTransportMessage implements TransportMessage
     /**
      * @param string $body
      * @param array<string, mixed> $properties
-     * @param string|null $id
+     * @param string|null $id The stream entry ID
+     * @param string|null $stream The stream the entry was read from
      */
     public function __construct(
         private string $body,
         private array $properties = [],
-        private ?string $id = null
+        private ?string $id = null,
+        private readonly ?string $stream = null
     ) {
+    }
+
+    public function getStream(): ?string
+    {
+        return $this->stream;
     }
 
     public function getId(): ?string
@@ -74,7 +81,7 @@ class RedisTransportMessage implements TransportMessage
         return is_string($event) ? $event : null;
     }
 
-    public function setRoutingKey(string $key): void
+    public function setRoutingKey(?string $key): void
     {
         $this->setProperty('event', $key);
     }
@@ -101,37 +108,5 @@ class RedisTransportMessage implements TransportMessage
     public function setMessageId(?string $messageId): void
     {
         $this->setProperty('message_id', $messageId);
-    }
-
-    public function getHeader(string $name, mixed $default = null): mixed
-    {
-        $headers = $this->getHeaders();
-
-        return $headers[$name] ?? $default;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function getHeaders(): array
-    {
-        $headers = $this->getProperty('headers', []);
-
-        return is_array($headers) ? $headers : [];
-    }
-
-    public function setHeader(string $name, mixed $value): void
-    {
-        $headers = $this->getHeaders();
-        $headers[$name] = $value;
-        $this->setProperty('headers', $headers);
-    }
-
-    /**
-     * @param array<string, mixed> $headers
-     */
-    public function setHeaders(array $headers): void
-    {
-        $this->setProperty('headers', $headers);
     }
 }

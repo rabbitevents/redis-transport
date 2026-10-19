@@ -28,7 +28,8 @@ class RedisDestinationAdapterTest extends TestCase
         self::assertEquals('auth-service:user', $queue->getName());
         self::assertEquals('auth-service:user', $queue->getOrigin());
         self::assertSame($topic, $queue->getTopic());
-        self::assertEquals('events', $queue->getStreamName());
+        self::assertEquals('rabbitevents:queue:auth-service:user', $queue->getDirectStreamName());
+        self::assertEquals(['events', 'rabbitevents:queue:auth-service:user'], $queue->getStreamNames());
         self::assertEquals(['user.created', 'user.*'], $queue->getEvents());
     }
 }

@@ -16,10 +16,10 @@ class RedisProducerAdapter implements Producer
 
     public function send(Destination $destination, TransportMessage $message): void
     {
-        // When releasing/retrying, Sender passes a RedisQueue as destination.
-        // We must write to the underlying stream, not the consumer group name.
+        // A queue destination (release, retry, failed message) must reach only that queue,
+        // so it goes to the queue's direct stream instead of the stream shared by all groups.
         $stream = $destination instanceof RedisQueue
-            ? $destination->getStreamName()
+            ? $destination->getDirectStreamName()
             : (string) $destination->getOrigin();
 
         $properties = $message->getProperties();

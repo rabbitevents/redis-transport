@@ -37,7 +37,7 @@ class RedisProducerAdapterTest extends TestCase
         $producer->send($topic, $message);
     }
 
-    public function test_send_resolves_stream_name_from_redis_queue(): void
+    public function test_send_to_a_queue_writes_to_its_direct_stream_only(): void
     {
         /** @var RedisClientInterface&m\MockInterface $client */
         $client = m::mock(RedisClientInterface::class);
@@ -48,10 +48,10 @@ class RedisProducerAdapterTest extends TestCase
 
         $message = new RedisTransportMessage('{"retry":true}', ['event' => 'user.created']);
 
-        // Must XADD to "my-stream" (the underlying stream), NOT "my-consumer-group"
+        // Not the shared "my-stream": every consumer group would receive the retry.
         $client->shouldReceive('xAdd')
             ->once()
-            ->with('my-stream', '*', m::type('array'))
+            ->with('rabbitevents:queue:my-consumer-group', '*', m::type('array'))
             ->andReturn('1700000001-0');
 
         $producer->send($queue, $message);

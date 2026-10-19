@@ -21,7 +21,7 @@
   "require": {
     "php": "^8.4",
     "ext-json": "*",
-    "rabbitevents/foundation": "^9.1 || ^10.0",
+    "rabbitevents/foundation": "^10.0",
     "illuminate/support": "^11.0|^12.0|^13.0",
     "illuminate/container": "^11.0|^12.0|^13.0"
   },
